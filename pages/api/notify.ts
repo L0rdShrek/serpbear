@@ -6,6 +6,7 @@ import Keyword from '../../database/models/keyword';
 import generateEmail from '../../utils/generateEmail';
 import parseKeywords from '../../utils/parseKeywords';
 import { getAppSettings } from './settings';
+import logger from '../../utils/logger';
 
 type NotifyResponse = {
    success?: boolean
@@ -49,7 +50,7 @@ const notify = async (req: NextApiRequest, res: NextApiResponse<NotifyResponse>)
 
       return res.status(200).json({ success: true, error: null });
    } catch (error) {
-      console.log(error);
+      logger.error('Error:', error);
       return res.status(401).json({ success: false, error: 'Error Sending Notification Email.' });
    }
 };
@@ -66,7 +67,10 @@ const sendNotificationEmail = async (domain: Domain, settings: SettingsType) => 
      } = settings;
 
    const fromEmail = `${notification_email_from_name} <${notification_email_from || 'no-reply@serpbear.com'}>`;
-   const mailerSettings:any = { host: smtp_server, port: parseInt(smtp_port, 10) };
+   const mailerSettings: { host: string; port: number; auth?: { user?: string; pass?: string } } = {
+      host: smtp_server,
+      port: parseInt(smtp_port, 10),
+   };
    if (smtp_username || smtp_password) {
       mailerSettings.auth = {};
       if (smtp_username) mailerSettings.auth.user = smtp_username;
@@ -84,5 +88,8 @@ const sendNotificationEmail = async (domain: Domain, settings: SettingsType) => 
       to: domain.notification_emails || notification_email,
       subject: `[${domainName}] Keyword Positions Update`,
       html: emailHTML,
-   }).catch((err:any) => console.log('[ERROR] Sending Notification Email for', domainName, err?.response || err));
+   }).catch((err: unknown) => {
+      const mailErr = err as { response?: string };
+      logger.error('Sending Notification Email for', domainName, mailErr?.response || err);
+   });
 };

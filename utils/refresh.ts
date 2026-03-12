@@ -3,6 +3,7 @@ import { setTimeout as sleep } from 'timers/promises';
 import { RefreshResult, removeFromRetryQueue, retryScrape, scrapeKeywordWithStrategy } from './scraper';
 import parseKeywords from './parseKeywords';
 import Keyword from '../database/models/keyword';
+import logger from './logger';
 
 /**
  * Refreshes the Keywords position by Scraping Google Search Result by
@@ -31,7 +32,7 @@ const refreshAndUpdateKeywords = async (rawKeyword:Keyword[], settings:SettingsT
       }
    } else {
       for (const keyword of rawKeyword) {
-         console.log('START SCRAPE: ', keyword.keyword);
+         logger.debug('START SCRAPE: ', keyword.keyword);
          const keywordPlain = keyword.get({ plain: true }) as KeywordType;
          const domainSettings = domains?.find((d) => d.domain === keywordPlain.domain);
          const updatedKeyword = await refreshAndUpdateKeyword(keyword, settings, domainSettings);
@@ -43,7 +44,7 @@ const refreshAndUpdateKeywords = async (rawKeyword:Keyword[], settings:SettingsT
    }
 
    const end = performance.now();
-   console.log(`time taken: ${end - start}ms`);
+   logger.debug(`time taken: ${end - start}ms`);
    return updatedKeywords;
 };
 
@@ -107,10 +108,10 @@ export const updateKeywordPosition = async (keywordRaw:Keyword, updatedKeyword: 
                lastResult: Array.isArray(updatedKeyword.result) ? JSON.stringify(updatedKeyword.result) : updatedKeyword.result,
                history: JSON.stringify(history),
             });
-            console.log('[SUCCESS] Updating the Keyword: ', keyword.keyword);
+            logger.info('Updating the Keyword: ', keyword.keyword);
             updated = { ...keyword, ...updatedVal, lastUpdateError: JSON.parse(updatedVal.lastUpdateError) };
          } catch (error) {
-            console.log('[ERROR] Updating SERP for Keyword', keyword.keyword, error);
+            logger.error('Updating SERP for Keyword', keyword.keyword, error);
          }
       }
 
@@ -131,10 +132,10 @@ const refreshParallel = async (keywords:KeywordType[], settings:SettingsType, do
    });
 
    return Promise.all(promises).then((promiseData) => {
-      console.log('ALL DONE!!!');
+      logger.info('Parallel scraping completed');
       return promiseData;
    }).catch((err) => {
-      console.log(err);
+      logger.error('Error:', err);
       return [];
    });
 };

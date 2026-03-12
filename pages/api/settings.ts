@@ -1,9 +1,9 @@
 import { writeFile, readFile } from 'fs/promises';
 import type { NextApiRequest, NextApiResponse } from 'next';
 import Cryptr from 'cryptr';
-import getConfig from 'next/config';
 import verifyUser from '../../utils/verifyUser';
 import allScrapers from '../../scrapers/index';
+import logger from '../../utils/logger';
 
 type SettingsGetResponse = {
    settings?: object | null,
@@ -27,8 +27,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 const getSettings = async (req: NextApiRequest, res: NextApiResponse<SettingsGetResponse>) => {
    const settings = await getAppSettings();
    if (settings) {
-      const { publicRuntimeConfig } = getConfig();
-      const version = publicRuntimeConfig?.version;
+      const version = process.env.APP_VERSION || '';
       return res.status(200).json({ settings: { ...settings, version } });
    }
    return res.status(400).json({ error: 'Error Loading Settings!' });
@@ -66,7 +65,7 @@ const updateSettings = async (req: NextApiRequest, res: NextApiResponse<Settings
       await writeFile(`${process.cwd()}/data/settings.json`, JSON.stringify(securedSettings), { encoding: 'utf-8' });
       return res.status(200).json({ settings });
    } catch (error) {
-      console.log('[ERROR] Updating App Settings. ', error);
+      logger.error('Updating App Settings. ', error);
       return res.status(200).json({ error: 'Error Updating Settings!' });
    }
 };
@@ -111,12 +110,12 @@ export const getAppSettings = async () : Promise<SettingsType> => {
             scrape_smart_full_fallback: settings.scrape_smart_full_fallback || false,
          };
       } catch (error) {
-         console.log('Error Decrypting Settings API Keys!');
+         logger.error('Error Decrypting Settings API Keys!');
       }
 
       return decryptedSettings;
    } catch (error) {
-      console.log('[ERROR] Getting App Settings. ', error);
+      logger.error('Getting App Settings. ', error);
       const settings: SettingsType = {
          scraper_type: 'none',
          notification_interval: 'never',

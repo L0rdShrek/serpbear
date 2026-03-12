@@ -8,6 +8,7 @@ import { getAppSettings } from './settings';
 import verifyUser from '../../utils/verifyUser';
 import parseKeywords from '../../utils/parseKeywords';
 import { scrapeKeywordFromGoogle } from '../../utils/scraper';
+import logger from '../../utils/logger';
 
 type KeywordsRefreshRes = {
    keywords?: KeywordType[]
@@ -48,7 +49,7 @@ const refresTheKeywords = async (req: NextApiRequest, res: NextApiResponse<Keywo
    }
    const keywordIDs = req.query.id !== 'all' && (req.query.id as string).split(',').map((item) => parseInt(item, 10));
    const { domain } = req.query || {};
-   console.log('keywordIDs: ', keywordIDs);
+   logger.debug('keywordIDs: ', keywordIDs);
 
    try {
       const settings = await getAppSettings();
@@ -75,7 +76,7 @@ const refresTheKeywords = async (req: NextApiRequest, res: NextApiResponse<Keywo
 
       return res.status(200).json({ keywords });
    } catch (error) {
-      console.log('ERROR refreshTheKeywords: ', error);
+      logger.error('ERROR refreshTheKeywords: ', error);
       return res.status(400).json({ error: 'Error refreshing keywords!' });
    }
 };
@@ -119,7 +120,7 @@ const getKeywordSearchResults = async (req: NextApiRequest, res: NextApiResponse
       }
       return res.status(400).json({ error: 'Error Scraping Search Results for the given keyword!' });
    } catch (error) {
-      console.log('ERROR refreshTheKeywords: ', error);
+      logger.error('ERROR refreshTheKeywords: ', error);
       return res.status(400).json({ error: 'Error refreshing keywords!' });
    }
 };

@@ -2,6 +2,7 @@ import { auth, searchconsole_v1 } from '@googleapis/searchconsole';
 import Cryptr from 'cryptr';
 import { readFile, writeFile, unlink } from 'fs/promises';
 import { getCountryCodeFromAlphaThree } from './countries';
+import logger from './logger';
 
 export type SCDomainFetchError = {
    error: boolean,
@@ -45,7 +46,15 @@ const fetchSearchConsoleData = async (domain:DomainType, days:number, type?:stri
    const endDate = `${new Date().getFullYear()}-${padDate(new Date().getMonth() + 1)}-${padDate(new Date().getDate())}`;
    const client = new searchconsole_v1.Searchconsole({ auth: authClient });
    // Params: https://developers.google.com/webmaster-tools/v1/searchanalytics/query
-   let requestBody:any = {
+   type SCRequestBody = {
+      startDate: string;
+      endDate: string;
+      type?: string;
+      rowLimit?: number;
+      dataState: string;
+      dimensions: string[];
+   };
+   let requestBody: SCRequestBody = {
       startDate,
       endDate,
       type: 'web',
@@ -65,30 +74,27 @@ const fetchSearchConsoleData = async (domain:DomainType, days:number, type?:stri
       const cleanDomain = domainName.replace(/^(https?:\/\/)?(www\.)?/, '').replace(/\/+$/, '');
       const siteUrl = domainSettings.property_type === 'url' && domainSettings.url ? domainSettings.url : `sc-domain:${cleanDomain}`;
       const res = client.searchanalytics.query({ siteUrl, requestBody });
-      const resData:any = (await res).data;
+      const resData = (await res).data as { rows?: SearchAnalyticsRawItem[] };
       let finalRows = resData.rows ? resData.rows.map((item:SearchAnalyticsRawItem) => parseSearchConsoleItem(item, domainName)) : [];
 
       if (type === 'stat' && resData.rows && resData.rows.length > 0) {
-         // console.log(resData.rows);
-         finalRows = [];
-         resData.rows.forEach((row:SearchAnalyticsRawItem) => {
-            finalRows.push({
+         finalRows = resData.rows.map((row:SearchAnalyticsRawItem) => ({
                date: row.keys[0],
                clicks: row.clicks,
                impressions: row.impressions,
                ctr: row.ctr * 100,
                position: row.position,
-            });
-         });
+            } as unknown as SearchAnalyticsItem));
       }
 
       return finalRows;
-   } catch (err:any) {
+   } catch (err: unknown) {
       const qType = type === 'stats' ? '(stats)' : `(${days}days)`;
-      const errorMsg = err?.response?.status && `${err?.response?.statusText}. ${err?.response?.data?.error_description}`;
-      console.log(`[ERROR] Search Console API Error for ${domainName} ${qType} : `, errorMsg || err?.code);
+      const scErr = err as { response?: { status?: number, statusText?: string, data?: { error_description?: string } }, code?: string };
+      const errorMsg = scErr?.response?.status ? `${scErr.response.statusText}. ${scErr.response.data?.error_description}` : '';
+      logger.error(`Search Console API Error for ${domainName} ${qType}:`, errorMsg || scErr?.code);
       // console.log('SC ERROR :', err);
-      return { error: true, errorMsg: errorMsg || err?.code };
+      return { error: true, errorMsg: errorMsg || scErr?.code || '' };
    }
 };
 
@@ -150,30 +156,34 @@ export const parseSearchConsoleItem = (SCItem: SearchAnalyticsRawItem, domainNam
  */
 export const integrateKeywordSCData = (keyword: KeywordType, SCData:SCDomainDataType) : KeywordType => {
    const kuid = `${keyword.country.toLowerCase()}:${keyword.device}:${keyword.keyword.replaceAll(' ', '_')}`;
-   const impressions:any = { yesterday: 0, threeDays: 0, sevenDays: 0, thirtyDays: 0, avgSevenDays: 0, avgThreeDays: 0, avgThirtyDays: 0 };
-   const visits :any = { yesterday: 0, threeDays: 0, sevenDays: 0, thirtyDays: 0, avgSevenDays: 0, avgThreeDays: 0, avgThirtyDays: 0 };
-   const ctr:any = { yesterday: 0, threeDays: 0, sevenDays: 0, thirtyDays: 0, avgSevenDays: 0, avgThreeDays: 0, avgThirtyDays: 0 };
-   const position:any = { yesterday: 0, threeDays: 0, sevenDays: 0, thirtyDays: 0, avgSevenDays: 0, avgThreeDays: 0, avgThirtyDays: 0 };
+   const impressions: KeywordSCDataChild = { yesterday: 0, threeDays: 0, sevenDays: 0, thirtyDays: 0, avgSevenDays: 0, avgThreeDays: 0, avgThirtyDays: 0 };
+   const visits: KeywordSCDataChild = { yesterday: 0, threeDays: 0, sevenDays: 0, thirtyDays: 0, avgSevenDays: 0, avgThreeDays: 0, avgThirtyDays: 0 };
+   const ctr: KeywordSCDataChild = { yesterday: 0, threeDays: 0, sevenDays: 0, thirtyDays: 0, avgSevenDays: 0, avgThreeDays: 0, avgThirtyDays: 0 };
+   const position: KeywordSCDataChild = { yesterday: 0, threeDays: 0, sevenDays: 0, thirtyDays: 0, avgSevenDays: 0, avgThreeDays: 0, avgThirtyDays: 0 };
 
-   const threeDaysData = SCData?.threeDays?.find((item:SearchAnalyticsItem) => item.uid === kuid) || {};
-   const SevenDaysData = SCData?.sevenDays?.find((item:SearchAnalyticsItem) => item.uid === kuid) || {};
-   const ThirdyDaysData = SCData?.thirtyDays?.find((item:SearchAnalyticsItem) => item.uid === kuid) || {};
-   const totalData:any = { threeDays: threeDaysData, sevenDays: SevenDaysData, thirtyDays: ThirdyDaysData };
+   type SCDataPeriod = Partial<SearchAnalyticsItem>;
+   const threeDaysData: SCDataPeriod = SCData?.threeDays?.find((item:SearchAnalyticsItem) => item.uid === kuid) || {};
+   const SevenDaysData: SCDataPeriod = SCData?.sevenDays?.find((item:SearchAnalyticsItem) => item.uid === kuid) || {};
+   const ThirdyDaysData: SCDataPeriod = SCData?.thirtyDays?.find((item:SearchAnalyticsItem) => item.uid === kuid) || {};
+   const totalData: Record<string, SCDataPeriod> = { threeDays: threeDaysData, sevenDays: SevenDaysData, thirtyDays: ThirdyDaysData };
 
-   Object.keys(totalData).forEach((dataKey) => {
-      let avgDataKey = 'avgThreeDays'; let divideBy = 3;
-      if (dataKey === 'sevenDays') { avgDataKey = 'avgSevenDays'; divideBy = 7; }
-      if (dataKey === 'thirtyDays') { avgDataKey = 'avgThirtyDays'; divideBy = 30; }
+   const periodConfig: { key: keyof KeywordSCDataChild, avg: keyof KeywordSCDataChild, divideBy: number }[] = [
+      { key: 'threeDays', avg: 'avgThreeDays', divideBy: 3 },
+      { key: 'sevenDays', avg: 'avgSevenDays', divideBy: 7 },
+      { key: 'thirtyDays', avg: 'avgThirtyDays', divideBy: 30 },
+   ];
+   periodConfig.forEach(({ key, avg, divideBy }) => {
+      const data = totalData[key] || {};
       // Actual Data
-      impressions[dataKey] = totalData[dataKey].impressions || 0;
-      visits[dataKey] = totalData[dataKey].clicks || 0;
-      ctr[dataKey] = Math.round((totalData[dataKey].ctr || 0) * 100) / 100;
-      position[dataKey] = totalData[dataKey].position ? Math.round(totalData[dataKey].position) : 0;
+      impressions[key] = data.impressions || 0;
+      visits[key] = data.clicks || 0;
+      ctr[key] = Math.round((data.ctr || 0) * 100) / 100;
+      position[key] = data.position ? Math.round(data.position) : 0;
       // Average Data
-      impressions[avgDataKey] = Math.round(impressions[dataKey] / divideBy);
-      ctr[avgDataKey] = Math.round((ctr[dataKey] / divideBy) * 100) / 100;
-      visits[avgDataKey] = Math.round(visits[dataKey] / divideBy);
-      position[avgDataKey] = Math.round(position[dataKey] / divideBy);
+      impressions[avg] = Math.round(impressions[key] / divideBy);
+      ctr[avg] = Math.round((ctr[key] / divideBy) * 100) / 100;
+      visits[avg] = Math.round(visits[key] / divideBy);
+      position[avg] = Math.round(position[key] / divideBy);
    });
    const finalSCData = { impressions, visits, ctr, position };
 
@@ -257,7 +267,7 @@ export const updateLocalSCData = async (domain:string, scDomainData?:SCDomainDat
    try {
       const filePath = `${process.cwd()}/data/SC_${domain.replaceAll('/', '-')}.json`;
       const emptyData:SCDomainDataType = { threeDays: [], sevenDays: [], thirtyDays: [], lastFetched: '', lastFetchError: '' };
-      await writeFile(filePath, JSON.stringify(scDomainData || emptyData), { encoding: 'utf-8' }).catch((err) => { console.log(err); });
+      await writeFile(filePath, JSON.stringify(scDomainData || emptyData), { encoding: 'utf-8' }).catch((err) => { logger.error('Error:', err); });
       return scDomainData || emptyData;
    } catch (error) {
       return false;

@@ -5,6 +5,7 @@ import Keyword from '../../database/models/keyword';
 import verifyUser from '../../utils/verifyUser';
 import parseKeywords from '../../utils/parseKeywords';
 import { getKeywordsVolume, updateKeywordsVolumeData } from '../../utils/adwords';
+import logger from '../../utils/logger';
 
 type KeywordsRefreshRes = {
    keywords?: KeywordType[]
@@ -60,7 +61,7 @@ const updatekeywordVolume = async (req: NextApiRequest, res: NextApiResponse<Key
 
       return res.status(400).json({ keywords: [], error: 'Error Updating Keywords Volume data' });
    } catch (error) {
-      console.log('[Error] updating keywords Volume Data: ', error);
+      logger.error('updating keywords Volume Data: ', error);
       return res.status(400).json({ error: 'Error Updating Keywords Volume data' });
    }
 };

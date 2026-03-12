@@ -3,6 +3,7 @@ import { Umzug, SequelizeStorage } from 'umzug';
 import type { NextApiRequest, NextApiResponse } from 'next';
 import db from '../../database/database';
 import verifyUser from '../../utils/verifyUser';
+import logger from '../../utils/logger';
 
 type MigrationGetResponse = {
    hasMigrations: boolean,
@@ -47,6 +48,6 @@ const migrateDatabase = async (req: NextApiRequest, res: NextApiResponse<Migrati
       logger: undefined,
    });
    const migrations = await umzug.up();
-   console.log('[Updated] migrations :', migrations);
+   logger.info('migrations :', migrations);
    return res.status(200).json({ migrated: true });
 };

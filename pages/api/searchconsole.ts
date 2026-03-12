@@ -3,6 +3,7 @@ import db from '../../database/database';
 import Domain from '../../database/models/domain';
 import { fetchDomainSCData, getSearchConsoleApiInfo, readLocalSCData } from '../../utils/searchConsole';
 import verifyUser from '../../utils/verifyUser';
+import logger from '../../utils/logger';
 
 type searchConsoleRes = {
    data: SCDomainDataType|null
@@ -47,7 +48,7 @@ const getDomainSearchConsoleData = async (req: NextApiRequest, res: NextApiRespo
       const scData = await fetchDomainSCData(domainObj, scDomainAPI);
       return res.status(200).json({ data: scData });
    } catch (error) {
-      console.log('[ERROR] Getting Search Console Data for: ', domainname, error);
+      logger.error('Getting Search Console Data for: ', domainname, error);
       return res.status(400).json({ data: null, error: 'Error Fetching Data from Google Search Console.' });
    }
 };
@@ -64,7 +65,7 @@ const cronRefreshSearchConsoleData = async (req: NextApiRequest, res: NextApiRes
       }
       return res.status(200).json({ status: 'completed' });
    } catch (error) {
-      console.log('[ERROR] CRON Updating Search Console Data. ', error);
+      logger.error('CRON Updating Search Console Data. ', error);
       return res.status(400).json({ status: 'failed', error: 'Error Fetching Data from Google Search Console.' });
    }
 };

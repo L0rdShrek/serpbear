@@ -4,6 +4,7 @@ import { getCountryInsight, getKeywordsInsight, getPagesInsight } from '../../ut
 import { fetchDomainSCData, getSearchConsoleApiInfo, readLocalSCData } from '../../utils/searchConsole';
 import verifyUser from '../../utils/verifyUser';
 import Domain from '../../database/models/domain';
+import logger from '../../utils/logger';
 
 type SCInsightRes = {
    data: InsightDataType | null,
@@ -58,7 +59,7 @@ const getDomainSearchConsoleInsight = async (req: NextApiRequest, res: NextApiRe
       const response = getInsightFromSCData(scData);
       return res.status(200).json({ data: response });
    } catch (error) {
-      console.log('[ERROR] Getting Domain Insight: ', domainname, error);
+      logger.error('Getting Domain Insight: ', domainname, error);
       return res.status(400).json({ data: null, error: 'Error Fetching Stats from Google Search Console.' });
    }
 };

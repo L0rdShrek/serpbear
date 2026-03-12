@@ -6,6 +6,7 @@ import Keyword from '../database/models/keyword';
 import parseKeywords from './parseKeywords';
 import countries from './countries';
 import { readLocalSCData } from './searchConsole';
+import logger from './logger';
 
 const memoryCache = new TTLCache({ max: 10000 });
 
@@ -74,12 +75,12 @@ export const getAdwordsCredentials = async (): Promise<false | AdwordsCredential
             refresh_token,
          };
       } catch (error) {
-         console.log('Error Decrypting Settings API Keys!');
+         logger.error('Error Decrypting Settings API Keys!');
       }
 
       return decryptedSettings;
    } catch (error) {
-      console.log('[ERROR] Getting App Settings. ', error);
+      logger.error('Getting App Settings. ', error);
    }
 
    return false;
@@ -100,7 +101,7 @@ export const getAdwordsAccessToken = async (credentials:AdwordsCredentials) => {
        const tokens = await resp.json();
        return tokens?.access_token || '';
    } catch (error) {
-      console.log('[Error] Getting Google Account Access Token:', error);
+      logger.error('Getting Google Account Access Token:', error);
       return '';
    }
 };
@@ -165,7 +166,13 @@ export const getAdwordsKeywordIdeas = async (credentials:AdwordsCredentials, adw
          // API: https://developers.google.com/google-ads/api/rest/reference/rest/v23/customers/generateKeywordIdeas
          const customerID = account_id.replaceAll('-', '');
          const geoTargetConstants = countries[country][3]; // '2840';
-         const reqPayload: Record<string, any> = {
+         const reqPayload: {
+            geoTargetConstants: string;
+            language: string;
+            pageSize: string;
+            keywordSeed?: { keywords: string[] };
+            siteSeed?: { site: string };
+         } = {
             geoTargetConstants: `geoTargetConstants/${geoTargetConstants}`,
             language: `languageConstants/${language}`,
             pageSize: test ? '1' : '1000',
@@ -190,8 +197,7 @@ export const getAdwordsKeywordIdeas = async (credentials:AdwordsCredentials, adw
          const ideaData = await resp.json();
 
          if (resp.status !== 200) {
-            console.log('[ERROR] Google Ads Response :', ideaData?.error?.details[0]?.errors[0]?.message);
-            // console.log('Response from Ads :', JSON.stringify(ideaData, null, 2));
+            logger.error('Google Ads Response :', ideaData?.error?.details[0]?.errors[0]?.message);
          }
 
          if (ideaData?.results) {
@@ -202,7 +208,7 @@ export const getAdwordsKeywordIdeas = async (credentials:AdwordsCredentials, adw
             await updateLocalKeywordIdeas(domain, { keywords: fetchedKeywords, settings: adwordsDomainOptions });
          }
       } catch (error) {
-         console.log('[ERROR] Fetching Keyword Ideas from Google Ads :', error);
+         logger.error('Fetching Keyword Ideas from Google Ads :', error);
       }
    }
 
@@ -300,10 +306,12 @@ export const getKeywordsVolume = async (keywords: KeywordType[]): Promise<{error
                const customerID = account_id.replaceAll('-', '');
                const geoTargetConstants = countries[country][3]; // '2840';
                const reqKeywords = keywordRequests[country].map((kw) => kw.keyword);
-               const reqPayload: Record<string, any> = {
+               const reqPayload: {
+                  keywords: string[];
+                  geoTargetConstants: string;
+               } = {
                   keywords: [...new Set(reqKeywords)],
                   geoTargetConstants: `geoTargetConstants/${geoTargetConstants}`,
-                  // language: `languageConstants/${language}`,
                };
                const resp = await fetch(`https://googleads.googleapis.com/v23/customers/${customerID}:generateKeywordHistoricalMetrics`, {
                   method: 'POST',
@@ -318,8 +326,7 @@ export const getKeywordsVolume = async (keywords: KeywordType[]): Promise<{error
                const ideaData = await resp.json();
 
                if (resp.status !== 200) {
-                  console.log('[ERROR] Google Ads Volume Request Response :', ideaData?.error?.details[0]?.errors[0]?.message);
-                  // console.log('Response from Google Ads :', JSON.stringify(ideaData, null, 2));
+                  logger.error('Google Ads Volume Request Response :', ideaData?.error?.details[0]?.errors[0]?.message);
                }
 
                if (ideaData?.results) {
@@ -343,7 +350,7 @@ export const getKeywordsVolume = async (keywords: KeywordType[]): Promise<{error
                   }
                }
             } catch (error) {
-               console.log('[ERROR] Fetching Keyword Volume from Google Ads :', error);
+               logger.error('Fetching Keyword Volume from Google Ads :', error);
             }
             if (Object.keys(keywordRequests).length > 1) {
                await sleep(7000);
@@ -364,15 +371,15 @@ export const getKeywordsVolume = async (keywords: KeywordType[]): Promise<{error
 export const updateKeywordsVolumeData = async (volumesData: false | Record<number, number>) => {
    if (volumesData === false) { return false; }
 
-   Object.keys(volumesData).forEach(async (keywordID) => {
+   await Promise.all(Object.keys(volumesData).map(async (keywordID) => {
       const keyID = parseInt(keywordID, 10);
       const volumeData = volumesData && volumesData[keyID] ? volumesData[keyID] : 0;
       try {
          await Keyword.update({ volume: volumeData }, { where: { ID: keyID } });
       } catch (error) {
-         console.log('');
+         logger.error('Error updating keyword volume:', error);
       }
-   });
+   }));
    return true;
 };
 
@@ -422,10 +429,10 @@ export const updateLocalKeywordIdeas = async (domain:string, data:IdeaDatabaseUp
       }
 
       await writeFile(`${process.cwd()}/data/${filename}`, JSON.stringify(fileContent, null, 2), 'utf-8');
-      console.log(`Data saved to ${filename} successfully!`);
+      logger.info(`Data saved to ${filename} successfully!`);
       return true;
    } catch (error) {
-      console.error(`[Error] Saving data to IDEAS_${domain}.json: ${error}`);
+      logger.error(`Saving data to IDEAS_${domain}.json: ${error}`);
       return false;
    }
 };

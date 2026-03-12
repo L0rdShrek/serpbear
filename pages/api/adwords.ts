@@ -5,6 +5,7 @@ import Cryptr from 'cryptr';
 import db from '../../database/database';
 import verifyUser from '../../utils/verifyUser';
 import { getAdwordsCredentials, getAdwordsKeywordIdeas } from '../../utils/adwords';
+import logger from '../../utils/logger';
 
 type adwordsValidateResp = {
    valid: boolean
@@ -68,14 +69,14 @@ const getAdwordsRefreshToken = async (req: NextApiRequest, res: NextApiResponse<
             if (errorMsg.includes('redirect_uri_mismatch')) {
                errorMsg += ` Redirected URL: ${redirectURL}`;
             }
-            console.log('[Error] Getting Google Ads Refresh Token! Reason: ', errorMsg);
+            logger.error('Getting Google Ads Refresh Token! Reason: ', errorMsg);
             return res.status(400).send(`Error Saving the Google Ads Refresh Token ${errorMsg ? `. Details: ${errorMsg}` : ''}. Please Try Again!`);
          }
       } else {
          return res.status(400).send('No Code Provided By Google. Please Try Again!');
       }
    } catch (error) {
-      console.log('[ERROR] Getting Google Ads Refresh Token: ', error);
+      logger.error('Getting Google Ads Refresh Token: ', error);
       return res.status(400).send('Error Getting Google Ads Refresh Token. Please Try Again!');
    }
 };
@@ -111,7 +112,7 @@ const validateAdwordsIntegration = async (req: NextApiRequest, res: NextApiRespo
       }
       return res.status(400).json({ valid: false, error: errMsg });
    } catch (error) {
-      console.log('[ERROR] Validating Google Ads Integration: ', error);
+      logger.error('Validating Google Ads Integration: ', error);
       return res.status(400).json({ valid: false, error: errMsg });
    }
 };

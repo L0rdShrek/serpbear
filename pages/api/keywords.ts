@@ -9,6 +9,7 @@ import { integrateKeywordSCData, readLocalSCData } from '../../utils/searchConso
 import refreshAndUpdateKeywords from '../../utils/refresh';
 import { getKeywordsVolume, updateKeywordsVolumeData } from '../../utils/adwords';
 import { removeFromRetryQueue } from '../../utils/scraper';
+import logger from '../../utils/logger';
 
 type KeywordsGetResponse = {
    keywords?: KeywordType[],
@@ -64,14 +65,14 @@ const getKeywords = async (req: NextApiRequest, res: NextApiResponse<KeywordsGet
          }));
          const historySorted = historyArray.sort((a, b) => a.date - b.date);
          const lastWeekHistory :KeywordHistory = {};
-         historySorted.slice(-7).forEach((x:any) => { lastWeekHistory[x.dateRaw] = x.position; });
+         historySorted.slice(-7).forEach((x) => { lastWeekHistory[x.dateRaw] = x.position; });
          const keywordWithSlimHistory = { ...keyword, lastResult: [], history: lastWeekHistory };
          const finalKeyword = domainSCData ? integrateKeywordSCData(keywordWithSlimHistory, domainSCData) : keywordWithSlimHistory;
          return finalKeyword;
       });
       return res.status(200).json({ keywords: processedKeywords });
    } catch (error) {
-      console.log('[ERROR] Getting Domain Keywords for ', domain, error);
+      logger.error('Getting Domain Keywords for ', domain, error);
       return res.status(400).json({ error: 'Error Loading Keywords for this Domain.' });
    }
 };
@@ -80,7 +81,8 @@ const addKeywords = async (req: NextApiRequest, res: NextApiResponse<KeywordsGet
    const { keywords } = req.body;
    if (keywords && Array.isArray(keywords) && keywords.length > 0) {
       // const keywordsArray = keywords.replaceAll('\n', ',').split(',').map((item:string) => item.trim());
-      const keywordsToAdd: any = []; // QuickFIX for bug: https://github.com/sequelize/sequelize-typescript/issues/936
+      // QuickFIX for bug: https://github.com/sequelize/sequelize-typescript/issues/936
+      const keywordsToAdd: Record<string, unknown>[] = [];
 
       keywords.forEach((kwrd: KeywordAddPayload) => {
          const { keyword, device, country, domain, tags, city } = kwrd;
@@ -123,7 +125,7 @@ const addKeywords = async (req: NextApiRequest, res: NextApiResponse<KeywordsGet
 
          return res.status(201).json({ keywords: keywordsParsed });
       } catch (error) {
-         console.log('[ERROR] Adding New Keywords ', error);
+         logger.error('Adding New Keywords ', error);
          return res.status(400).json({ error: 'Could Not Add New Keyword!' });
       }
    } else {
@@ -135,7 +137,7 @@ const deleteKeywords = async (req: NextApiRequest, res: NextApiResponse<Keywords
    if (!req.query.id && typeof req.query.id !== 'string') {
       return res.status(400).json({ error: 'keyword ID is Required!' });
    }
-   console.log('req.query.id: ', req.query.id);
+   logger.debug('req.query.id: ', req.query.id);
 
    try {
       const keywordsToRemove = (req.query.id as string).split(',').map((item) => parseInt(item, 10));
@@ -147,7 +149,7 @@ const deleteKeywords = async (req: NextApiRequest, res: NextApiResponse<Keywords
 
       return res.status(200).json({ keywordsRemoved: removedKeywordCount });
    } catch (error) {
-      console.log('[ERROR] Removing Keyword. ', error);
+      logger.error('Removing Keyword. ', error);
       return res.status(400).json({ error: 'Could Not Remove Keyword!' });
    }
 };
@@ -156,7 +158,7 @@ const updateKeywords = async (req: NextApiRequest, res: NextApiResponse<Keywords
    if (!req.query.id && typeof req.query.id !== 'string') {
       return res.status(400).json({ error: 'keyword ID is Required!' });
    }
-   if (req.body.sticky === undefined && !req.body.tags === undefined) {
+   if (req.body.sticky === undefined && req.body.tags === undefined) {
       return res.status(400).json({ error: 'keyword Payload Missing!' });
    }
    const keywordIDs = (req.query.id as string).split(',').map((item) => parseInt(item, 10));
@@ -173,21 +175,21 @@ const updateKeywords = async (req: NextApiRequest, res: NextApiResponse<Keywords
          return res.status(200).json({ keywords });
       }
       if (tags) {
-         const tagsKeywordIDs = Object.keys(tags);
+         const tagsKeywordIDs = Object.keys(tags).map((id) => parseInt(id, 10));
          const multipleKeywords = tagsKeywordIDs.length > 1;
-         for (const keywordID of tagsKeywordIDs) {
-            const selectedKeyword = await Keyword.findOne({ where: { ID: keywordID } });
-            const currentTags = selectedKeyword && selectedKeyword.tags ? JSON.parse(selectedKeyword.tags) : [];
-            const mergedTags = Array.from(new Set([...currentTags, ...tags[keywordID]]));
-            if (selectedKeyword) {
-               await selectedKeyword.update({ tags: JSON.stringify(multipleKeywords ? mergedTags : tags[keywordID]) });
-            }
-         }
+         // Batch load all keywords at once instead of N+1 queries
+         const keywordsToUpdate: Keyword[] = await Keyword.findAll({ where: { ID: { [Op.in]: tagsKeywordIDs } } });
+         await Promise.all(keywordsToUpdate.map((selectedKeyword) => {
+            const kwId = String(selectedKeyword.ID);
+            const currentTags = selectedKeyword.tags ? JSON.parse(selectedKeyword.tags) : [];
+            const mergedTags = Array.from(new Set([...currentTags, ...tags[kwId]]));
+            return selectedKeyword.update({ tags: JSON.stringify(multipleKeywords ? mergedTags : tags[kwId]) });
+         }));
          return res.status(200).json({ keywords });
       }
       return res.status(400).json({ error: 'Invalid Payload!' });
    } catch (error) {
-      console.log('[ERROR] Updating Keyword. ', error);
+      logger.error('Updating Keyword. ', error);
       return res.status(200).json({ error: 'Error Updating keywords!' });
    }
 };

@@ -1,5 +1,11 @@
 {
+  "root": true,
   "extends": ["next/core-web-vitals", "airbnb-base"],
+  "settings": {
+    "next": {
+      "rootDir": "./"
+    }
+  },
   "rules":{
    "linebreak-style": 0,
    "indent":"off",

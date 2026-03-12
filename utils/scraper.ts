@@ -4,6 +4,7 @@ import { readFile, writeFile } from 'fs/promises';
 import HttpsProxyAgent from 'https-proxy-agent';
 import countries from './countries';
 import allScrapers from '../scrapers/index';
+import logger from './logger';
 
 type SearchResult = {
    title: string,
@@ -43,7 +44,7 @@ export const getScraperClient = (
    pagination?: ScraperPagination,
 ): Promise<AxiosResponse|Response> | false => {
    let apiURL = ''; let client: Promise<AxiosResponse|Response> | false = false;
-   const headers: any = {
+   const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/42.0.2311.135 Safari/537.36 Edge/12.246',
       Accept: 'application/json; charset=utf8;',
@@ -57,11 +58,11 @@ export const getScraperClient = (
 
    if (scraper) {
       // Set Scraper Header
-      const scrapeHeaders = scraper.headers ? scraper.headers(keyword, settings) : null;
+      const scrapeHeaders = scraper.headers ? scraper.headers(keyword, settings) as Record<string, string> : null;
       const scraperApiUrl = scraper.scrapeURL ? scraper.scrapeURL(keyword, settings, countries, pagination) : null;
       if (scrapeHeaders && Object.keys(scrapeHeaders).length > 0) {
          Object.keys(scrapeHeaders).forEach((headerItemKey:string) => {
-            headers[headerItemKey] = scrapeHeaders[headerItemKey as keyof object];
+            headers[headerItemKey] = scrapeHeaders[headerItemKey];
          });
       }
       // Set Scraper API URL
@@ -86,7 +87,7 @@ export const getScraperClient = (
          proxyURL = firstProxy;
       }
 
-      axiosConfig.httpsAgent = new (HttpsProxyAgent as any)(proxyURL.trim());
+      axiosConfig.httpsAgent = new (HttpsProxyAgent as unknown as new (proxy: string) => unknown)(proxyURL.trim());
       axiosConfig.proxy = false;
       const axiosClient = axios.create(axiosConfig);
       const p = pagination || { start: 0, num: PAGE_SIZE };
@@ -111,15 +112,22 @@ const scrapeSinglePage = async (
    const scraperClient = getScraperClient(keyword, settings, scraperObj, pagination);
    if (!scraperClient) { return []; }
    try {
-      const res = scraperType === 'proxy' && settings.proxy ? await scraperClient : await scraperClient.then((result:any) => result.json());
+      let res: Record<string, unknown>;
+      if (scraperType === 'proxy' && settings.proxy) {
+         res = await scraperClient as unknown as Record<string, unknown>;
+      } else {
+         const rawRes = await scraperClient;
+         res = await (rawRes as Response).json();
+      }
       const scraperResult = scraperObj?.resultObjectKey && res[scraperObj.resultObjectKey] ? res[scraperObj.resultObjectKey] : '';
-      const scrapeResult: string = (res.data || res.html || res.results || scraperResult || '');
+      const scrapeResult: string = (res.data || res.html || res.results || scraperResult || '') as string;
       if (res && scrapeResult) {
          const extracted = scraperObj?.serpExtractor ? scraperObj.serpExtractor(scrapeResult) : extractScrapedResult(scrapeResult, keyword.device);
          return extracted.map((item, i) => ({ ...item, position: pagination.start + i + 1 }));
       }
-   } catch (error:any) {
-      console.log('[ERROR] Scraping page', pagination.page, 'for keyword:', keyword.keyword, error?.message || '');
+   } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : '';
+      logger.error('Scraping page', pagination.page, 'for keyword:', keyword.keyword, errMsg);
    }
    return [];
 };
@@ -234,7 +242,7 @@ export const scrapeKeywordWithStrategy = async (
    const finalSerp = getSerp(keyword.domain, allScrapedResults);
    const fullResults = buildFullResults(allScrapedResults);
 
-   console.log('[SERP]:', keyword.keyword, finalSerp.position, finalSerp.url, `(strategy: ${strategy})`);
+   logger.info('[SERP]:', keyword.keyword, finalSerp.position, finalSerp.url, `(strategy: ${strategy})`);
    return {
       ID: keyword.ID,
       keyword: keyword.keyword,
@@ -268,34 +276,41 @@ export const scrapeKeywordFromGoogle = async (keyword:KeywordType, settings:Sett
 
    if (!scraperClient) { return false; }
 
-   let scraperError:any = null;
+   let scraperError: string | null = null;
    try {
-      const res = scraperType === 'proxy' && settings.proxy ? await scraperClient : await scraperClient.then((result:any) => result.json());
+      let res: Record<string, unknown>;
+      if (scraperType === 'proxy' && settings.proxy) {
+         res = await scraperClient as unknown as Record<string, unknown>;
+      } else {
+         const rawRes = await scraperClient;
+         res = await (rawRes as Response).json();
+      }
       const scraperResult = scraperObj?.resultObjectKey && res[scraperObj.resultObjectKey] ? res[scraperObj.resultObjectKey] : '';
-      const scrapeResult:string = (res.data || res.html || res.results || scraperResult || '');
+      const scrapeResult: string = (res.data || res.html || res.results || scraperResult || '') as string;
       if (res && scrapeResult) {
          const extracted = scraperObj?.serpExtractor ? scraperObj.serpExtractor(scrapeResult) : extractScrapedResult(scrapeResult, keyword.device);
-         await writeFile('result.txt', JSON.stringify(scrapeResult), { encoding: 'utf-8' }).catch((err) => { console.log(err); });
+         await writeFile('result.txt', JSON.stringify(scrapeResult), { encoding: 'utf-8' }).catch((err) => { logger.error('Error:', err); });
          const serp = getSerp(keyword.domain, extracted);
          refreshedResults = { ID: keyword.ID, keyword: keyword.keyword, position: serp.position, url: serp.url, result: extracted, error: false };
-         console.log('[SERP]: ', keyword.keyword, serp.position, serp.url);
+         logger.info('[SERP]:', keyword.keyword, serp.position, serp.url);
       } else {
-         scraperError = res.detail || res.error || 'Unknown Error';
-         throw new Error(res);
+         scraperError = (res.detail || res.error || 'Unknown Error') as string;
+         throw new Error(scraperError);
       }
-   } catch (error:any) {
+   } catch (error: unknown) {
       refreshedResults.error = scraperError || 'Unknown Error';
-      if (settings.scraper_type === 'proxy' && error && error.response && error.response.statusText) {
-         refreshedResults.error = `[${error.response.status}] ${error.response.statusText}`;
-      } else if (settings.scraper_type === 'proxy' && error) {
-         refreshedResults.error = error;
+      const axiosErr = error as { response?: { status?: number, statusText?: string } };
+      if (settings.scraper_type === 'proxy' && axiosErr?.response?.statusText) {
+         refreshedResults.error = `[${axiosErr.response.status}] ${axiosErr.response.statusText}`;
+      } else if (settings.scraper_type === 'proxy' && error instanceof Error) {
+         refreshedResults.error = error.message;
       }
 
-      console.log('[ERROR] Scraping Keyword : ', keyword.keyword);
-      if (!(error && error.response && error.response.statusText)) {
-         console.log('[ERROR_MESSAGE]: ', JSON.stringify(error));
+      logger.error('Scraping Keyword:', keyword.keyword);
+      if (axiosErr?.response?.statusText) {
+         logger.error('Error details:', axiosErr.response.statusText);
       } else {
-         console.log('[ERROR_MESSAGE]: ', error && error.response && error.response.statusText);
+         logger.error('Error details:', error instanceof Error ? error.message : String(error));
       }
    }
 
@@ -314,8 +329,8 @@ export const extractScrapedResult = (content: string, device: string): SearchRes
    const $ = cheerio.load(content);
    const hasValidContent = [...$('body').find('#search'), ...$('body').find('#rso')];
    if (hasValidContent.length === 0) {
-      const msg = '[ERROR] Scraped search results do not adhere to expected format. Unable to parse results';
-      console.log(msg);
+      const msg = 'Scraped search results do not adhere to expected format. Unable to parse results';
+      logger.error(msg);
       throw new Error(msg);
    }
 
@@ -352,7 +367,7 @@ export const extractScrapedResult = (content: string, device: string): SearchRes
    // Mobile Scraper
    if (extractedResult.length === 0 && device === 'mobile') {
       const items = $('body').find('#rso > div');
-      console.log('Scraped search results contain ', items.length, ' mobile results.');
+      logger.debug('Scraped search results contain ', items.length, ' mobile results.');
       for (let i = 0; i < items.length; i += 1) {
          const item = $(items[i]);
          const linkDom = item.find('a[role="presentation"]');
@@ -401,18 +416,18 @@ export const getSerp = (domainURL:string, result:SearchResult[]) : SERPObject =>
  * @returns {void}
  */
 export const retryScrape = async (keywordID: number) : Promise<void> => {
-   if (!keywordID && !Number.isInteger(keywordID)) { return; }
+   if (!keywordID || !Number.isInteger(keywordID)) { return; }
    let currentQueue: number[] = [];
 
    const filePath = `${process.cwd()}/data/failed_queue.json`;
-   const currentQueueRaw = await readFile(filePath, { encoding: 'utf-8' }).catch((err) => { console.log(err); return '[]'; });
+   const currentQueueRaw = await readFile(filePath, { encoding: 'utf-8' }).catch((err) => { logger.error('Error:', err); return '[]'; });
    currentQueue = currentQueueRaw ? JSON.parse(currentQueueRaw) : [];
 
    if (!currentQueue.includes(keywordID)) {
       currentQueue.push(Math.abs(keywordID));
    }
 
-   await writeFile(filePath, JSON.stringify(currentQueue), { encoding: 'utf-8' }).catch((err) => { console.log(err); return '[]'; });
+   await writeFile(filePath, JSON.stringify(currentQueue), { encoding: 'utf-8' }).catch((err) => { logger.error('Error:', err); return '[]'; });
 };
 
 /**
@@ -421,13 +436,13 @@ export const retryScrape = async (keywordID: number) : Promise<void> => {
  * @returns {void}
  */
 export const removeFromRetryQueue = async (keywordID: number) : Promise<void> => {
-   if (!keywordID && !Number.isInteger(keywordID)) { return; }
+   if (!keywordID || !Number.isInteger(keywordID)) { return; }
    let currentQueue: number[] = [];
 
    const filePath = `${process.cwd()}/data/failed_queue.json`;
-   const currentQueueRaw = await readFile(filePath, { encoding: 'utf-8' }).catch((err) => { console.log(err); return '[]'; });
+   const currentQueueRaw = await readFile(filePath, { encoding: 'utf-8' }).catch((err) => { logger.error('Error:', err); return '[]'; });
    currentQueue = currentQueueRaw ? JSON.parse(currentQueueRaw) : [];
    currentQueue = currentQueue.filter((item) => item !== Math.abs(keywordID));
 
-   await writeFile(filePath, JSON.stringify(currentQueue), { encoding: 'utf-8' }).catch((err) => { console.log(err); return '[]'; });
+   await writeFile(filePath, JSON.stringify(currentQueue), { encoding: 'utf-8' }).catch((err) => { logger.error('Error:', err); return '[]'; });
 };
