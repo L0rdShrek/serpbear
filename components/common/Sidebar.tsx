@@ -26,7 +26,8 @@ const Sidebar = ({ domains, showAddModal } : SidebarProps) => {
                                        href={`/domain/${d.slug}`}
                                        className={`block cursor-pointer px-4 text-ellipsis max-w-[215px] overflow-hidden whitespace-nowrap rounded
                                         rounded-r-none ${((`/domain/${d.slug}` === router.asPath || `/domain/console/${d.slug}` === router.asPath
-                                        || `/domain/insight/${d.slug}` === router.asPath || `/domain/ideas/${d.slug}` === router.asPath)
+                                        || `/domain/insight/${d.slug}` === router.asPath || `/domain/ideas/${d.slug}` === router.asPath
+                                        || `/domain/backlinks/${d.slug}` === router.asPath)
                                         ? 'bg-white text-zinc-800 border border-r-0' : 'text-zinc-500')}`}>
                                           <img
                                           className={' inline-block mr-1'}

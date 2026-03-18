@@ -237,6 +237,18 @@ type IdeaKeyword = {
    position:number
 }
 
+type BacklinkItem = {
+   title: string,
+   url: string,
+   position: number,
+}
+
+type BacklinkDomainData = {
+   backlinks: BacklinkItem[],
+   lastFetched: string,
+   lastFetchError: string,
+}
+
 type scraperExtractedItem = {
    title: string,
    url: string,
