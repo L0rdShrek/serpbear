@@ -14,11 +14,13 @@
     "test:cv": "jest --coverage --coverageDirectory='coverage'",
     "db:migrate": "sequelize-cli db:migrate --env production",
     "db:revert": "sequelize-cli db:migrate:undo --env production",
-    "release": "standard-version"
+    "release": "standard-version",
+    "mcp": "node mcp-server.js"
   },
   "dependencies": {
     "@googleapis/searchconsole": "^1.0.5",
     "@isaacs/ttlcache": "^1.4.1",
+    "@modelcontextprotocol/sdk": "^1.27.1",
     "@types/react-transition-group": "^4.4.12",
     "axios": "^1.13.5",
     "axios-retry": "^3.3.1",
@@ -49,7 +51,8 @@
     "sequelize": "^6.37.7",
     "sequelize-typescript": "^2.1.6",
     "sqlite3": "^5.1.7",
-    "umzug": "^3.8.2"
+    "umzug": "^3.8.2",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.9.1",
